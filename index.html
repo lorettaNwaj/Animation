@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Animated Historical US Boundaries</title>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v2.12.0/mapbox-gl.css" rel="stylesheet">
+    <style>
+        body { margin: 0; padding: 0; }
+        #map { width: 100%; height: 90vh; }
+        #slider { width: 80%; margin: 20px auto; display: block; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <input type="range" id="slider" min="1800" max="1880" step="10" value="1800">
+    <script src="https://api.mapbox.com/mapbox-gl-js/v2.12.0/mapbox-gl.js"></script>
+    <script>
+        mapboxgl.accessToken = 'pk.eyJ1Ijoibndhamlha3UiLCJhIjoiY2x3amphbXZ2MG02YTJscDRmcXE3MDllZCJ9.RwnwQjJ1U0Y95kTvA-4i7g'; // Replace with your Mapbox access token
+
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: {
+                "version": 8,
+                "sources": {
+                    "esri-terrain": {
+                        "type": "raster",
+                        "tiles": [
+                            "https://services.arcgisonline.com/arcgis/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}"
+                        ],
+                        "tileSize": 256,
+                        "attribution": 'Esri, HERE, Garmin, FAO, NOAA, USGS, Intermap, METI, © OpenStreetMap contributors, and the GIS User Community'
+                    }
+                },
+                "glyphs": "mapbox://fonts/mapbox/{fontstack}/{range}.pbf",
+                "layers": [
+                    {
+                        "id": "esri-terrain-layer",
+                        "type": "raster",
+                        "source": "esri-terrain",
+                        "minzoom": 0,
+                        "maxzoom": 22
+                    }
+                ]
+            },
+            center: [-98.35, 39.50],
+            zoom: 4
+        });
+
+        const shapefiles = {
+            1800: 'states1800.json',
+            1810: 'states1810.json',
+            1820: 'states1820.json',
+            1830: 'states1830.json',
+            1840: 'states1840.json',
+            1850: 'states1850.json',
+            1860: 'states1860.json',
+            1870: 'states1870.json',
+            1880: 'states1880.json'
+        };
+
+        function getNameField(data) {
+            const possibleFields = ['STATENAM', 'STATE_ABBR'];
+            const properties = data.features[0].properties;
+            for (let field of possibleFields) {
+                if (properties.hasOwnProperty(field)) {
+                    return field;
+                }
+            }
+            return 'name'; // Fallback if no match is found
+        }
+
+        function removeDuplicateLabels(data, nameField) {
+            const seen = new Set();
+            const uniqueFeatures = data.features.filter(feature => {
+                const name = feature.properties[nameField];
+                if (seen.has(name)) {
+                    return false;
+                } else {
+                    seen.add(name);
+                    return true;
+                }
+            });
+            return {
+                ...data,
+                features: uniqueFeatures
+            };
+        }
+
+        function loadShapefile(year) {
+            const url = shapefiles[year];
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    const nameField = getNameField(data);
+                    data = removeDuplicateLabels(data, nameField);
+                    if (map.getSource('us-boundaries')) {
+                        map.getSource('us-boundaries').setData(data);
+                        map.setLayoutProperty('us-boundaries-labels', 'text-field', ['get', nameField]);
+                    } else {
+                        map.addSource('us-boundaries', {
+                            type: 'geojson',
+                            data: data
+                        });
+                        map.addLayer({
+                            id: 'us-boundaries-layer',
+                            type: 'fill',
+                            source: 'us-boundaries',
+                            layout: {},
+                            paint: {
+                                'fill-color': 'rgba(0, 0, 255, 0.1)',
+                                'fill-outline-color': 'blue'
+                            }
+                        });
+                        map.addLayer({
+                            id: 'us-boundaries-labels',
+                            type: 'symbol',
+                            source: 'us-boundaries',
+                            layout: {
+                                'text-field': ['get', nameField],
+                                'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+                                'text-size': 12
+                            },
+                            paint: {
+                                'text-color': 'black'
+                            }
+                        });
+                    }
+                })
+                .catch(error => console.error('Error loading shapefile:', error));
+        }
+
+        map.on('load', () => {
+            loadShapefile(1800);
+
+            document.getElementById('slider').addEventListener('input', function () {
+                const year = this.value;
+                loadShapefile(year);
+            });
+        });
+    </script>
+</body>
+</html>
